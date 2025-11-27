@@ -18,7 +18,7 @@
 
 ## 🔥 News
 
-- **[2025/11/26]** We’ve set up a WeChat group to make it easier to collaborate and exchange ideas on this project. Welcome to join the Group to share your thoughts, ask questions, or contribute your ideas! 🔥 Join our [WeChat Group](figs/webchat_group.jpg) Now!
+- **[2025/11/26]** We’ve set up a WeChat group to make it easier to collaborate and exchange ideas on this project. Welcome to join the Group to share your thoughts, ask questions, or contribute your ideas! 🔥 Join our [WeChat Group](figs/wechat_group.jpg) Now!
 - **[2025/11/25]** Agent0-VL is released on [arXiv](https://arxiv.org/abs/2511.19900)!
 - **[2025/11/20]** Agent0 paper was released on [arXiv](https://arxiv.org/abs/2511.16043)!
 
