@@ -223,3 +223,5 @@ We thank the open-source community for their foundational work that made this re
 - The teams behind Qwen, InternVL, and other base models
 - The VeRL team for their excellent RL framework
 - All the benchmark creators and maintainers
+
+[![✨Star History Chart](https://api.star-history.com/svg?repos=aiming-lab/Agent0&type=Date)](https://star-history.com/#bytebase/star-history&Date)
