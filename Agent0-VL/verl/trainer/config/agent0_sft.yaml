@@ -1,0 +1,52 @@
+# Agent0-VL SFT Configuration (verl FSDP route)
+#
+# Follows the verl sft_trainer.yaml schema, for use with
+# verl/trainer/fsdp_sft_trainer.py-compatible trainers:
+#
+#   torchrun --nproc_per_node=8 verl/trainer/agent0_sft_trainer.py \
+#       --train_data data/sft/train.parquet ...
+#
+# (The CLI entry builds its config from arguments; this file documents the
+# equivalent hydra-style configuration and can be used with
+# `python -m verl.trainer.fsdp_sft_trainer --config-name=agent0_sft` for
+# text-only models.)
+#
+# Paper SFT hyperparameters (Appendix B): lr 1e-5, global batch 128,
+# 3 epochs, linear warmup ratio 0.05.
+#
+# NOTE: this route optimizes the language loss on trajectories where tool
+# calls/observations are rendered as text. For full vision-language SFT with
+# images (the paper's pipeline), use scripts/sft_stage1.sh + sft_stage2.sh.
+
+defaults:
+  - sft_trainer
+  - _self_
+
+data:
+  train_batch_size: 128
+  micro_batch_size_per_gpu: 4
+  train_files: data/sft/train.parquet
+  val_files: data/sft/val.parquet
+  prompt_key: prompt
+  response_key: response
+  max_length: 4096
+  truncation: right
+
+model:
+  partial_pretrain: Qwen/Qwen2.5-VL-7B-Instruct
+  trust_remote_code: True
+  enable_gradient_checkpointing: True
+
+optim:
+  lr: 1e-5
+  weight_decay: 0.01
+  warmup_steps_ratio: 0.05
+  clip_grad: 1.0
+
+trainer:
+  project_name: agent0-vl-sft
+  experiment_name: sft-training
+  total_epochs: 3
+  logger: ['console', 'wandb']
+  default_local_dir: checkpoints/sft
+  default_hdfs_dir: null

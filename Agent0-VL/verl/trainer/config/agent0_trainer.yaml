@@ -1,0 +1,128 @@
+# Agent0-VL Training Configuration
+# Self-Evolving Reasoning Cycle (SERC) for Vision-Language Models
+#
+# Composes the base ppo_trainer.yaml and overrides only Agent0-VL settings,
+# so every key the trainer reads is guaranteed to exist.
+#
+# Launch:
+#   python3 -m verl.trainer.main_ppo --config-name=agent0_trainer \
+#       data.train_files=data/agent0/train.parquet \
+#       data.val_files=data/agent0/val.parquet
+#
+# Paper hyperparameters (Appendix B): self-evolving RL with GRPO (N=8),
+# lr 5e-7, batch 256, 1 epoch per self-evolution iteration, beta_KL=0.001,
+# beta_ent=0.01, repetition penalty 1.05, tau_c=0.7, eta=0.05.
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  train_files: data/agent0/train.parquet
+  val_files: data/agent0/val.parquet
+  max_prompt_length: 4096
+  max_response_length: 2048
+  train_batch_size: 256
+  filter_overlong_prompts: True
+  filter_overlong_prompts_workers: 4
+  trust_remote_code: True
+
+actor_rollout_ref:
+  model:
+    path: Qwen/Qwen2.5-VL-7B-Instruct
+    enable_gradient_checkpointing: True
+    use_remove_padding: True
+  actor:
+    ppo_mini_batch_size: 128
+    use_dynamic_bsz: True
+    ppo_max_token_len_per_gpu: 32768
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.28
+    entropy_coeff: 0.01        # beta_ent from paper
+    use_kl_loss: True          # GRPO KL regularization to the reference policy
+    kl_loss_coef: 0.001        # beta_KL from paper
+    kl_loss_type: low_var_kl
+    use_multiturn_loss: True
+    use_torch_compile: False
+    optim:
+      lr: 5e-7                 # paper: 5e-7 for the self-evolving RL stage
+      lr_warmup_steps_ratio: 0.05
+  rollout:
+    name: vllm
+    temperature: 1.0
+    top_p: 1.0
+    top_k: -1
+    repetition_penalty: 1.05   # paper Appendix B
+    prompt_length: ${data.max_prompt_length}
+    response_length: ${data.max_response_length}
+    gpu_memory_utilization: 0.8
+    enforce_eager: False
+    free_cache_engine: False
+    tensor_model_parallel_size: 1
+    max_num_batched_tokens: 32768
+    n: 8                       # GRPO group size N=8 from paper
+    # --- Agent0-VL SERC rollout ---
+    rollout_type: agent0
+    num_turns: 8               # kept in sync with max_reasoning_steps
+    max_reasoning_steps: 8     # max Solver steps per trajectory
+    max_total_response_length: 16384  # response buffer across all SERC turns
+    max_obs_length: 512        # max tokens per tool observation
+    repair_threshold: 0.7      # tau_c: confidence threshold for self-repair
+    max_repairs_per_trajectory: 2
+    enable_tool_execution: True
+    enable_verification: True
+    enable_self_repair: True
+    sandbox_timeout: 10
+    val_kwargs:
+      top_k: -1
+      top_p: 0.95
+      temperature: 0.6
+      n: 4
+      do_sample: True
+      num_turns: 8
+
+critic:
+  # Unused with GRPO (adv_estimator=grpo); kept for PPO/GAE runs.
+  optim:
+    lr: 2e-6
+  model:
+    path: ${actor_rollout_ref.model.path}
+    use_remove_padding: True
+
+reward_model:
+  enable: False
+  reward_manager: agent0
+  # SERC reward parameters (paper Eq. 2-5)
+  lambda_tool: 0.3    # tool correctness weight
+  # Cross-role KL term (paper Eq. 2). INACTIVE by default: the rollout does not
+  # emit a per-step 'kl_divergence', so this term contributes 0. Populate
+  # step_data['kl_divergence'] in the rollout to enable it.
+  beta_div: 0.0
+  alpha_out: 1.0      # outcome reward weight
+  gamma: 0.99         # step-reward discount factor
+  tau_c: 0.7          # repair threshold (matches rollout.repair_threshold)
+  eta: 0.05           # repair penalty coefficient
+  kappa: 5.0          # repair gate steepness
+  max_steps: ${actor_rollout_ref.rollout.max_reasoning_steps}
+
+algorithm:
+  adv_estimator: grpo   # paper uses GRPO; set to gae for PPO with critic
+  gamma: 1.0            # token-level discount (step discount handled in reward manager)
+  lam: 0.95
+  use_kl_in_reward: False
+  norm_type: whole
+
+trainer:
+  project_name: Agent0-VL
+  experiment_name: agent0_serc
+  logger: ['console', 'wandb']
+  n_gpus_per_node: 8
+  nnodes: 1
+  save_freq: 50
+  test_freq: 50
+  total_epochs: 1       # paper: 1 epoch per self-evolution iteration (run 3 iterations)
+  val_before_train: True
+  resume_mode: auto
+  balance_batch: False  # keep GRPO uid groups contiguous
+  log_val_generations: 2
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
